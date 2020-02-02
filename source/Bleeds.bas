@@ -34,6 +34,7 @@ Public cfg As cls_cfg
 '=======================================================================================
 
 Sub Start()
+  If ActiveSelectionRange Is Nothing Then Exit Sub
   If ActiveSelectionRange.Count > 1 Then
     MsgBox "Выбрано несколько объектов"
     Exit Sub
