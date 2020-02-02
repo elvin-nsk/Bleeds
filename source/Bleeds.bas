@@ -1,7 +1,7 @@
 Attribute VB_Name = "Bleeds"
 '=======================================================================================
 ' Макрос           : Bleeds
-' Версия           : 2020.01.29
+' Версия           : 2020.02.02
 ' Автор            : elvin-nsk (me@elvin.nsk.ru)
 '=======================================================================================
 
@@ -10,7 +10,7 @@ Option Explicit
 Const RELEASE As Boolean = True
 
 '=======================================================================================
-' глобальные переменные
+' переменные
 '=======================================================================================
 
 Enum enum_Sides
@@ -27,70 +27,90 @@ Enum enum_Corners
   BottomRightCorner = 3
 End Enum
 
+Public cfg As cls_cfg
+
 '=======================================================================================
 ' публичные процедуры
 '=======================================================================================
 
 Sub Start()
-  
-  'припуск
-  Const BLEEDSIZE# = 3 'мм
-  'на сколько подрезать битмап
-  Const CLEARSIDES& = 2 'пиксели
-  'до какого знака округлять обрезной размер (0 - до целых мм)
-  Const CLEARROUNDDECPLACES& = 0
-  
-  If RELEASE Then On Error GoTo ErrHandler
-  
-  Dim tBitmapShape As Shape, tBleeds As Shape, tFinal As Shape
-  Dim tRange As New ShapeRange
-  Dim BitmapW#, BitmapH#
-  
-  BoostStart "Поставить припуски", RELEASE
-  
-  If Not ActiveSelectionRange.FirstShape Is Nothing Then
-    Set tBitmapShape = ActiveSelectionRange.FirstShape
-  Else
-    MsgBox "Не выбран объект"
+  If ActiveSelectionRange.Count > 1 Then
+    MsgBox "Выбрано несколько объектов"
     Exit Sub
   End If
-  If tBitmapShape.Type <> cdrBitmapShape Then
-    MsgBox "Выбранный объект не является растром"
+  If ActiveSelectionRange.Count < 1 Then
+    MsgBox "Выберите объект"
     Exit Sub
   End If
-  
-  BitmapW = Round(tBitmapShape.SizeWidth, CLEARROUNDDECPLACES)
-  BitmapH = Round(tBitmapShape.SizeHeight, CLEARROUNDDECPLACES)
-  
-  ShrinkBitmap tBitmapShape, CLEARSIDES
-  
-  tBitmapShape.SetSize BitmapW, BitmapH
-  
-  Set tBleeds = CreateBleeds(tBitmapShape, BLEEDSIZE)
-  tBleeds.Name = "припуски"
-  tRange.Add tBleeds
-  tRange.Add tBitmapShape
-  Set tFinal = tRange.Group
-  If tBitmapShape.Name = "" Then
-    tFinal.Name = "группа - растр с припусками"
-  Else
-    tFinal.Name = tBitmapShape.Name & " (группа с припусками)"
-  End If
-  tFinal.CreateSelection
-  
-ExitSub:
-  BoostFinish
-  Exit Sub
-
-ErrHandler:
-  MsgBox "Ошибка: " & Err.Description, vbCritical
-  Resume ExitSub
-
+  Set cfg = New cls_cfg
+  frm_Main.Show
+  Set cfg = Nothing
 End Sub
 
 '=======================================================================================
 ' функции
 '=======================================================================================
+
+Function DoBleeds()
+  
+  If RELEASE Then On Error GoTo ErrHandler
+  
+  Dim tSrcShape As Shape, tBleeds As Shape, tFinal As Shape
+  Dim tRange As New ShapeRange
+  Dim tW#, tH#, tName$
+  
+  lib_elvin.BoostStart "Добавить припуски", RELEASE
+  
+  Set tSrcShape = ActiveSelectionRange.FirstShape
+  
+  'если округляем размер
+  If cfg.RoundSize Then
+    tW = Round(tSrcShape.SizeWidth, cfg.RoundDec)
+    tH = Round(tSrcShape.SizeHeight, cfg.RoundDec)
+  Else
+    tW = tSrcShape.SizeWidth
+    tH = tSrcShape.SizeHeight
+  End If
+  
+  'если подчищаем битмап
+  If tSrcShape.Type = cdrBitmapShape Then
+    If cfg.BitmapTrim Then
+      ShrinkBitmap tSrcShape, cfg.BitmapTrimSize
+    End If
+  End If
+  
+  tSrcShape.SetSize tW, tH
+  
+  Set tBleeds = CreateBleeds(tSrcShape, cfg.Bleeds)
+  
+  'если растрируем всё обратно в битмап
+  If tSrcShape.Type = cdrBitmapShape And cfg.BitmapFlatten Then
+    tName = tSrcShape.Name
+    Set tFinal = Flatten(tSrcShape, tBleeds)
+    tFinal.Name = tName
+  Else 'а нет - так группируем, обзываем
+    tBleeds.Name = "припуски"
+    tRange.Add tBleeds
+    tRange.Add tSrcShape
+    Set tFinal = tRange.Group
+    If tSrcShape.Name = "" Then
+      tFinal.Name = "группа - растр с припусками"
+    Else
+      tFinal.Name = tSrcShape.Name & " (группа с припусками)"
+    End If
+  End If
+  
+  tFinal.CreateSelection
+  
+ExitSub:
+  lib_elvin.BoostFinish
+  Exit Function
+
+ErrHandler:
+  MsgBox "Ошибка: " & Err.Description, vbCritical
+  Resume ExitSub
+
+End Function
 
 Sub ShrinkBitmap(BitmapShape As Shape, ByVal Pixels&)
   
@@ -121,7 +141,7 @@ Sub ShrinkBitmap(BitmapShape As Shape, ByVal Pixels&)
                                                   .RightX - tPxW * Pixels, _
                                                   .BottomY + tPxH * Pixels)
   End With
-  Set BitmapShape = trimBitmap(BitmapShape, tCrop, False)
+  Set BitmapShape = TrimBitmap(BitmapShape, tCrop, False)
   
   'restore
   ActiveDocument.Unit = tSaveUnit
@@ -133,7 +153,7 @@ Function CreateBleeds(BitmapShape As Shape, ByVal Bleed#) As Shape
   
   Dim tRange As New ShapeRange
   
-  If BitmapShape.Type <> cdrBitmapShape Then Exit Function
+  On Error Resume Next
   
   tRange.Add createSideBleed(BitmapShape, Bleed, LeftSide)
   tRange.Add createSideBleed(BitmapShape, Bleed, RightSide)
@@ -145,8 +165,27 @@ Function CreateBleeds(BitmapShape As Shape, ByVal Bleed#) As Shape
   tRange.Add createCornerBleed(BitmapShape, Bleed, BottomLeftCorner)
   tRange.Add createCornerBleed(BitmapShape, Bleed, BottomRightCorner)
   
+  On Error GoTo 0
+  
   Set CreateBleeds = tRange.Group
 
+End Function
+
+Function Flatten(SourceBitmap As Shape, BleedsGroup As Shape) As Shape
+  Dim tRange As New ShapeRange
+  Dim tW#, tH#
+  tRange.Add SourceBitmap
+  tRange.Add BleedsGroup
+  tW = tRange.SizeWidth
+  tH = tRange.SizeHeight
+  tRange.SetPixelAlignedRendering True
+  With SourceBitmap.Bitmap
+  If .ResolutionX <> .ResolutionY Then
+    tRange.SizeHeight = tRange.SizeHeight * .ResolutionY / .ResolutionX
+  End If
+    Set Flatten = tRange.ConvertToBitmapEx(.Mode, , .Transparent, .ResolutionX, cdrNoAntiAliasing, False)
+  End With
+  tRange.SetSize tW, tH
 End Function
 
 '=======================================================================================
@@ -154,8 +193,7 @@ End Function
 '=======================================================================================
 
 Function createSideBleed(BitmapShape As Shape, ByVal Bleed#, ByVal Side As enum_Sides) As Shape
-
-  Dim tCrop As Shape
+  
   Dim tLeftAdd#, tRightAdd#, tTopAdd#, tBottomAdd#
   Dim tShiftX#, tShiftY#
   Dim tFlip As cdrFlipAxes
@@ -178,12 +216,12 @@ Function createSideBleed(BitmapShape As Shape, ByVal Bleed#, ByVal Side As enum_
       tFlip = cdrFlipVertical
       tShiftY = -Bleed
   End Select
-
-  Set tCrop = BitmapShape.Layer.CreateRectangle(BitmapShape.LeftX + tLeftAdd, _
-                                                BitmapShape.TopY + tTopAdd, _
-                                                BitmapShape.RightX + tRightAdd, _
-                                                BitmapShape.BottomY + tBottomAdd)
-  Set createSideBleed = trimBitmap(BitmapShape.Duplicate, tCrop, False)
+  
+  Set createSideBleed = lib_elvin.CropTool(BitmapShape.Duplicate, BitmapShape.LeftX + tLeftAdd, _
+                                                                  BitmapShape.TopY + tTopAdd, _
+                                                                  BitmapShape.RightX + tRightAdd, _
+                                                                  BitmapShape.BottomY + tBottomAdd).FirstShape
+  If createSideBleed Is Nothing Then Exit Function
   createSideBleed.Flip tFlip
   createSideBleed.Move tShiftX, tShiftY
   createSideBleed.Name = "боковой припуск"
@@ -191,8 +229,7 @@ Function createSideBleed(BitmapShape As Shape, ByVal Bleed#, ByVal Side As enum_
 End Function
 
 Function createCornerBleed(BitmapShape As Shape, ByVal Bleed#, ByVal Corner As enum_Corners) As Shape
-
-  Dim tCrop As Shape
+  
   Dim tLeftAdd#, tRightAdd#, tTopAdd#, tBottomAdd#
   Dim tShiftX#, tShiftY#
   
@@ -218,89 +255,13 @@ Function createCornerBleed(BitmapShape As Shape, ByVal Bleed#, ByVal Corner As e
       tShiftX = Bleed
       tShiftY = -Bleed
   End Select
-
-  Set tCrop = BitmapShape.Layer.CreateRectangle(BitmapShape.LeftX + tLeftAdd, _
-                                                BitmapShape.TopY + tTopAdd, _
-                                                BitmapShape.RightX + tRightAdd, _
-                                                BitmapShape.BottomY + tBottomAdd)
-  Set createCornerBleed = trimBitmap(BitmapShape.Duplicate, tCrop, False)
+  Set createCornerBleed = lib_elvin.CropTool(BitmapShape.Duplicate, BitmapShape.LeftX + tLeftAdd, _
+                                                                    BitmapShape.TopY + tTopAdd, _
+                                                                    BitmapShape.RightX + tRightAdd, _
+                                                                    BitmapShape.BottomY + tBottomAdd).FirstShape
+  If createCornerBleed Is Nothing Then Exit Function
   createCornerBleed.Flip cdrFlipBoth
   createCornerBleed.Move tShiftX, tShiftY
   createCornerBleed.Name = "угловой припуск"
   
 End Function
-
-Function trimBitmap(BitmapShape As Shape, CropEnvelopeShape As Shape, Optional ByVal LeaveCropEnvelope As Boolean = True) As Shape
-
-  Const EXPANDBY& = 2 'px
-  
-  Dim tCrop As Shape
-  Dim tPxW#, tPxH#
-  Dim tSaveUnit As cdrUnit
-
-  If BitmapShape.Type <> cdrBitmapShape Then Exit Function
-  
-  'save
-  tSaveUnit = ActiveDocument.Unit
-  
-  ActiveDocument.Unit = cdrInch
-  tPxW = 1 / BitmapShape.Bitmap.ResolutionX
-  tPxH = 1 / BitmapShape.Bitmap.ResolutionY
-  BitmapShape.Bitmap.ResetCropEnvelope
-  Set tCrop = BitmapShape.Layer.CreateRectangle(CropEnvelopeShape.LeftX - tPxW * EXPANDBY, _
-                                                CropEnvelopeShape.TopY + tPxH * EXPANDBY, _
-                                                CropEnvelopeShape.RightX + tPxW * EXPANDBY, _
-                                                CropEnvelopeShape.BottomY - tPxH * EXPANDBY)
-  Set trimBitmap = tCrop.Intersect(BitmapShape, False, False)
-  If trimBitmap Is Nothing Then
-    tCrop.Delete
-    GoTo ExitFunction
-  End If
-  trimBitmap.Bitmap.Crop
-  Set trimBitmap = CropEnvelopeShape.Intersect(trimBitmap, LeaveCropEnvelope, False)
-  
-ExitFunction:
-  'restore
-  ActiveDocument.Unit = tSaveUnit
-  
-End Function
-
-'---------------------------------------------------------------------------------------
-' Функции          : BoostStart, BoostFinish
-' Версия           : 2019.09.06
-' Авторы           : dizzy, elvin-nsk
-' Назначение       : доработанные оптимизаторы от CtC
-' Зависимости      : самодостаточные
-'
-' Параметры:
-' ~~~~~~~~~~
-'
-'
-' Использование:
-' ~~~~~~~~~~~~~~
-'
-'---------------------------------------------------------------------------------------
-Sub BoostStart(Optional ByVal UnDo$ = "", Optional ByVal Optimize = True)
-  If UnDo <> "" And Not (ActiveDocument Is Nothing) Then ActiveDocument.BeginCommandGroup UnDo
-  If Optimize Then Optimization = True
-  EventsEnabled = False
-  If Not ActiveDocument Is Nothing Then
-    With ActiveDocument
-      .SaveSettings
-      .Unit = cdrMillimeter
-      .ReferencePoint = cdrCenter
-    End With
-  End If
-End Sub
-Sub BoostFinish(Optional ByVal EndUndoGroup = True)
-  EventsEnabled = True
-  Optimization = False
-  If Not ActiveDocument Is Nothing Then
-    With ActiveDocument
-      .RestoreSettings
-      If EndUndoGroup Then .EndCommandGroup
-    End With
-    ActiveWindow.Refresh
-  End If
-  Application.Refresh
-End Sub
