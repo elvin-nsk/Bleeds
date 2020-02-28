@@ -80,12 +80,12 @@ End Sub
 '=======================================================================================
 
 Private Sub FormŒ ()
-  Unload Me
+  Me.Hide
   DoBleeds
 End Sub
 
 Private Sub FormCancel()
-  Unload Me
+  Me.Hide
 End Sub
 
 '=======================================================================================

@@ -34,6 +34,9 @@ Public cfg As cls_cfg
 '=======================================================================================
 
 Sub Start()
+
+  If RELEASE Then On Error GoTo ErrHandler
+  
   If ActiveSelectionRange Is Nothing Then Exit Sub
   If ActiveSelectionRange.Count > 1 Then
     MsgBox "Выбрано несколько объектов"
@@ -43,9 +46,19 @@ Sub Start()
     MsgBox "Выберите объект"
     Exit Sub
   End If
+  
   Set cfg = New cls_cfg
   frm_Main.Show
+  Unload frm_Main
   Set cfg = Nothing
+  
+ExitSub:
+  lib_elvin.BoostFinish
+  Exit Sub
+
+ErrHandler:
+  MsgBox "Ошибка: " & Err.Description, vbCritical
+  Resume ExitSub
 End Sub
 
 '=======================================================================================
@@ -53,8 +66,6 @@ End Sub
 '=======================================================================================
 
 Function DoBleeds()
-  
-  If RELEASE Then On Error GoTo ErrHandler
   
   Dim tSrcShape As Shape, tBleeds As Shape, tFinal As Shape
   Dim tRange As New ShapeRange
@@ -102,14 +113,6 @@ Function DoBleeds()
   End If
   
   tFinal.CreateSelection
-  
-ExitSub:
-  lib_elvin.BoostFinish
-  Exit Function
-
-ErrHandler:
-  MsgBox "Ошибка: " & Err.Description, vbCritical
-  Resume ExitSub
 
 End Function
 
