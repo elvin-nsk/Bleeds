@@ -1,17 +1,15 @@
 Attribute VB_Name = "Bleeds"
-'=======================================================================================
+'===============================================================================
 ' Макрос           : Bleeds
-' Версия           : 2020.02.28
+' Версия           : 2021.04.30
 ' Автор            : elvin-nsk (me@elvin.nsk.ru)
-'=======================================================================================
+'===============================================================================
 
 Option Explicit
 
 Const RELEASE As Boolean = True
 
-'=======================================================================================
-' переменные
-'=======================================================================================
+'===============================================================================
 
 Enum enum_Sides
   LeftSide = 0
@@ -27,15 +25,11 @@ Enum enum_Corners
   BottomRightCorner = 3
 End Enum
 
-Public cfg As cls_cfg
-
-'=======================================================================================
-' публичные процедуры
-'=======================================================================================
+'===============================================================================
 
 Sub Start()
 
-  If RELEASE Then On Error GoTo ErrHandler
+  If RELEASE Then On Error GoTo Catch
   
   If ActiveSelectionRange Is Nothing Then Exit Sub
   If ActiveSelectionRange.Count > 1 Then
@@ -47,156 +41,193 @@ Sub Start()
     Exit Sub
   End If
   
-  Set cfg = New cls_cfg
-  frm_Main.Show
-  Unload frm_Main
-  Set cfg = Nothing
+  Dim Cfg As Config
+  Set Cfg = New Config
+  Dim View As MainView
+  Set View = New MainView
   
-ExitSub:
+  With View
+    
+    If ActiveSelectionRange.FirstShape.Type = cdrBitmapShape Then .IsRastr = True
+    .BleedsMin = 0.1
+    .BleedsMax = 10000
+    
+    Cfg.Load
+    .tbBleeds.Value = CStr(Cfg.Bleeds)
+    .cbRound.Value = Cfg.RoundSize
+    Select Case Cfg.RoundDec
+      Case 0
+        .obRound0.Value = True
+      Case 1
+        .obRound1.Value = True
+      Case 2
+        .obRound2.Value = True
+    End Select
+    .cbTrim.Value = Cfg.BitmapTrim
+    .tbTrim.Value = Cfg.BitmapTrimSize
+    .cbFlatten.Value = Cfg.BitmapFlatten
+    
+    .Show
+    If Not .IsOK Then Exit Sub
+    
+    Cfg.Bleeds = CDbl(.tbBleeds.Value)
+    Cfg.RoundSize = .cbRound.Value
+    Select Case True
+      Case .obRound0.Value = True
+        Cfg.RoundDec = 0
+      Case .obRound1.Value = True
+        Cfg.RoundDec = 1
+      Case .obRound2.Value = True
+        Cfg.RoundDec = 2
+    End Select
+    Cfg.BitmapTrim = .cbTrim.Value
+    Cfg.BitmapTrimSize = .tbTrim.Value
+    Cfg.BitmapFlatten = .cbFlatten.Value
+    Cfg.Save
+  
+  End With
+  
+  lib_elvin.BoostStart "Добавить припуски", RELEASE
+    
+  SetBleeds Cfg
+  
+Finally:
   lib_elvin.BoostFinish
   Exit Sub
 
-ErrHandler:
+Catch:
   MsgBox "Ошибка: " & Err.Description, vbCritical
-  Resume ExitSub
+  Resume Finally
 End Sub
 
-'=======================================================================================
-' функции
-'=======================================================================================
+'===============================================================================
 
-Function DoBleeds()
+Function SetBleeds(Cfg As Config)
   
-  Dim tSrcShape As Shape, tBleeds As Shape, tFinal As Shape
-  Dim tRange As New ShapeRange
-  Dim tW#, tH#, tName$
+  Dim SrcShape As Shape, Bleeds As Shape, Final As Shape
+  Dim Range As New ShapeRange
+  Dim W#, H#, Name$
   
-  lib_elvin.BoostStart "Добавить припуски", RELEASE
-  
-  Set tSrcShape = ActiveSelectionRange.FirstShape
+  Set SrcShape = ActiveSelectionRange.FirstShape
   
   'если округляем размер
-  If cfg.RoundSize Then
-    tW = Round(tSrcShape.SizeWidth, cfg.RoundDec)
-    tH = Round(tSrcShape.SizeHeight, cfg.RoundDec)
+  If Cfg.RoundSize Then
+    W = Round(SrcShape.SizeWidth, Cfg.RoundDec)
+    H = Round(SrcShape.SizeHeight, Cfg.RoundDec)
   Else
-    tW = tSrcShape.SizeWidth
-    tH = tSrcShape.SizeHeight
+    W = SrcShape.SizeWidth
+    H = SrcShape.SizeHeight
   End If
   
   'если подчищаем битмап
-  If tSrcShape.Type = cdrBitmapShape Then
-    If cfg.BitmapTrim Then
-      ShrinkBitmap tSrcShape, cfg.BitmapTrimSize
+  If SrcShape.Type = cdrBitmapShape Then
+    If Cfg.BitmapTrim Then
+      ShrinkBitmap SrcShape, Cfg.BitmapTrimSize
     End If
   End If
   
-  tSrcShape.SetSize tW, tH
+  SrcShape.SetSize W, H
   
-  Set tBleeds = CreateBleeds(tSrcShape, cfg.Bleeds)
+  Set Bleeds = CreateBleeds(SrcShape, Cfg.Bleeds)
   
   'если растрируем всё обратно в битмап
-  If tSrcShape.Type = cdrBitmapShape And cfg.BitmapFlatten Then
-    tName = tSrcShape.Name
-    Set tFinal = Flatten(tSrcShape, tBleeds)
-    tFinal.Name = tName
+  If SrcShape.Type = cdrBitmapShape And Cfg.BitmapFlatten Then
+    Name = SrcShape.Name
+    Set Final = Flatten(SrcShape, Bleeds)
+    Final.Name = Name
   Else 'а нет - так группируем, обзываем
-    tBleeds.Name = "припуски"
-    tRange.Add tBleeds
-    tRange.Add tSrcShape
-    Set tFinal = tRange.Group
-    If tSrcShape.Name = "" Then
-      tFinal.Name = "группа - растр с припусками"
+    Bleeds.Name = "припуски"
+    Range.Add Bleeds
+    Range.Add SrcShape
+    Set Final = Range.Group
+    If SrcShape.Name = "" Then
+      Final.Name = "группа - растр с припусками"
     Else
-      tFinal.Name = tSrcShape.Name & " (группа с припусками)"
+      Final.Name = SrcShape.Name & " (группа с припусками)"
     End If
   End If
   
-  tFinal.CreateSelection
+  Final.CreateSelection
 
 End Function
 
 Sub ShrinkBitmap(BitmapShape As Shape, ByVal Pixels&)
   
-  Dim tCrop As Shape
-  Dim tPxW#, tPxH#, tSizeW#, tSizeH#, tAngleMult&
-  Dim tSaveUnit As cdrUnit, tSavePoint As cdrReferencePoint
+  Dim Crop As Shape
+  Dim PxW#, PxH#, SizeW#, SizeH#, AngleMult&
+  Dim SaveUnit As cdrUnit, SavePoint As cdrReferencePoint
   
   If BitmapShape.Type <> cdrBitmapShape Then Exit Sub
   If Pixels < 1 Then Exit Sub
   
   'save
-  tSaveUnit = ActiveDocument.Unit
-  tSavePoint = ActiveDocument.ReferencePoint
+  SaveUnit = ActiveDocument.Unit
+  SavePoint = ActiveDocument.ReferencePoint
   
   ActiveDocument.Unit = cdrInch
   ActiveDocument.ReferencePoint = cdrCenter
   With BitmapShape
-    tSizeW = .SizeWidth
-    tSizeH = .SizeHeight
-    tAngleMult = .RotationAngle \ 90
+    SizeW = .SizeWidth
+    SizeH = .SizeHeight
+    AngleMult = .RotationAngle \ 90
     .ClearTransformations
-    .RotationAngle = tAngleMult * 90
-    .SetSize tSizeW, tSizeH
-    tPxW = 1 / .Bitmap.ResolutionX
-    tPxH = 1 / .Bitmap.ResolutionY
-    Set tCrop = .Layer.CreateRectangle(BitmapShape.LeftX + tPxW * Pixels, _
-                                                  .TopY - tPxH * Pixels, _
-                                                  .RightX - tPxW * Pixels, _
-                                                  .BottomY + tPxH * Pixels)
+    .RotationAngle = AngleMult * 90
+    .SetSize SizeW, SizeH
+    PxW = 1 / .Bitmap.ResolutionX
+    PxH = 1 / .Bitmap.ResolutionY
+    Set Crop = .Layer.CreateRectangle(BitmapShape.LeftX + PxW * Pixels, _
+                                                  .TopY - PxH * Pixels, _
+                                                  .RightX - PxW * Pixels, _
+                                                  .BottomY + PxH * Pixels)
   End With
-  Set BitmapShape = TrimBitmap(BitmapShape, tCrop, False)
+  Set BitmapShape = TrimBitmap(BitmapShape, Crop, False)
   
   'restore
-  ActiveDocument.Unit = tSaveUnit
-  ActiveDocument.ReferencePoint = tSavePoint
+  ActiveDocument.Unit = SaveUnit
+  ActiveDocument.ReferencePoint = SavePoint
 
 End Sub
 
 Function CreateBleeds(BitmapShape As Shape, ByVal Bleed#) As Shape
   
-  Dim tRange As New ShapeRange
+  Dim Range As New ShapeRange
   
   On Error Resume Next
   
-  tRange.Add createSideBleed(BitmapShape, Bleed, LeftSide)
-  tRange.Add createSideBleed(BitmapShape, Bleed, RightSide)
-  tRange.Add createSideBleed(BitmapShape, Bleed, TopSide)
-  tRange.Add createSideBleed(BitmapShape, Bleed, BottomSide)
+  Range.Add CreateSideBleed(BitmapShape, Bleed, LeftSide)
+  Range.Add CreateSideBleed(BitmapShape, Bleed, RightSide)
+  Range.Add CreateSideBleed(BitmapShape, Bleed, TopSide)
+  Range.Add CreateSideBleed(BitmapShape, Bleed, BottomSide)
   
-  tRange.Add createCornerBleed(BitmapShape, Bleed, TopLeftCorner)
-  tRange.Add createCornerBleed(BitmapShape, Bleed, TopRightCorner)
-  tRange.Add createCornerBleed(BitmapShape, Bleed, BottomLeftCorner)
-  tRange.Add createCornerBleed(BitmapShape, Bleed, BottomRightCorner)
+  Range.Add CreateCornerBleed(BitmapShape, Bleed, TopLeftCorner)
+  Range.Add CreateCornerBleed(BitmapShape, Bleed, TopRightCorner)
+  Range.Add CreateCornerBleed(BitmapShape, Bleed, BottomLeftCorner)
+  Range.Add CreateCornerBleed(BitmapShape, Bleed, BottomRightCorner)
   
   On Error GoTo 0
   
-  Set CreateBleeds = tRange.Group
+  Set CreateBleeds = Range.Group
 
 End Function
 
 Function Flatten(SourceBitmap As Shape, BleedsGroup As Shape) As Shape
-  Dim tRange As New ShapeRange
-  Dim tW#, tH#
-  tRange.Add SourceBitmap
-  tRange.Add BleedsGroup
-  tW = tRange.SizeWidth
-  tH = tRange.SizeHeight
-  tRange.SetPixelAlignedRendering True
+  Dim Range As New ShapeRange
+  Dim W#, H#
+  Range.Add SourceBitmap
+  Range.Add BleedsGroup
+  W = Range.SizeWidth
+  H = Range.SizeHeight
+  Range.SetPixelAlignedRendering True
   With SourceBitmap.Bitmap
-  If .ResolutionX <> .ResolutionY Then
-    tRange.SizeHeight = tRange.SizeHeight * .ResolutionY / .ResolutionX
-  End If
-    Set Flatten = tRange.ConvertToBitmapEx(.Mode, , .Transparent, .ResolutionX, cdrNoAntiAliasing, False)
+    If .ResolutionX <> .ResolutionY Then
+      Range.SizeHeight = Range.SizeHeight * .ResolutionY / .ResolutionX
+    End If
+    Set Flatten = Range.ConvertToBitmapEx(.Mode, , .Transparent, .ResolutionX, cdrNoAntiAliasing, False)
   End With
-  tRange.SetSize tW, tH
+  Flatten.SetSize W, H
 End Function
 
-'=======================================================================================
-' вторичные функции
-'=======================================================================================
-
-Function createSideBleed(BitmapShape As Shape, ByVal Bleed#, ByVal Side As enum_Sides) As Shape
+Function CreateSideBleed(BitmapShape As Shape, ByVal Bleed#, ByVal Side As enum_Sides) As Shape
   
   Dim tLeftAdd#, tRightAdd#, tTopAdd#, tBottomAdd#
   Dim tShiftX#, tShiftY#
@@ -221,18 +252,18 @@ Function createSideBleed(BitmapShape As Shape, ByVal Bleed#, ByVal Side As enum_
       tShiftY = -Bleed
   End Select
   
-  Set createSideBleed = lib_elvin.CropTool(BitmapShape.Duplicate, BitmapShape.LeftX + tLeftAdd, _
+  Set CreateSideBleed = lib_elvin.CropTool(BitmapShape.Duplicate, BitmapShape.LeftX + tLeftAdd, _
                                                                   BitmapShape.TopY + tTopAdd, _
                                                                   BitmapShape.RightX + tRightAdd, _
                                                                   BitmapShape.BottomY + tBottomAdd).FirstShape
-  If createSideBleed Is Nothing Then Exit Function
-  createSideBleed.Flip tFlip
-  createSideBleed.Move tShiftX, tShiftY
-  createSideBleed.Name = "боковой припуск"
+  If CreateSideBleed Is Nothing Then Exit Function
+  CreateSideBleed.Flip tFlip
+  CreateSideBleed.Move tShiftX, tShiftY
+  CreateSideBleed.Name = "боковой припуск"
 
 End Function
 
-Function createCornerBleed(BitmapShape As Shape, ByVal Bleed#, ByVal Corner As enum_Corners) As Shape
+Function CreateCornerBleed(BitmapShape As Shape, ByVal Bleed#, ByVal Corner As enum_Corners) As Shape
   
   Dim tLeftAdd#, tRightAdd#, tTopAdd#, tBottomAdd#
   Dim tShiftX#, tShiftY#
@@ -259,13 +290,13 @@ Function createCornerBleed(BitmapShape As Shape, ByVal Bleed#, ByVal Corner As e
       tShiftX = Bleed
       tShiftY = -Bleed
   End Select
-  Set createCornerBleed = lib_elvin.CropTool(BitmapShape.Duplicate, BitmapShape.LeftX + tLeftAdd, _
+  Set CreateCornerBleed = lib_elvin.CropTool(BitmapShape.Duplicate, BitmapShape.LeftX + tLeftAdd, _
                                                                     BitmapShape.TopY + tTopAdd, _
                                                                     BitmapShape.RightX + tRightAdd, _
                                                                     BitmapShape.BottomY + tBottomAdd).FirstShape
-  If createCornerBleed Is Nothing Then Exit Function
-  createCornerBleed.Flip cdrFlipBoth
-  createCornerBleed.Move tShiftX, tShiftY
-  createCornerBleed.Name = "угловой припуск"
+  If CreateCornerBleed Is Nothing Then Exit Function
+  CreateCornerBleed.Flip cdrFlipBoth
+  CreateCornerBleed.Move tShiftX, tShiftY
+  CreateCornerBleed.Name = "угловой припуск"
   
 End Function

@@ -123,16 +123,16 @@ End Function
 
 'дублировать активную страницу со всеми слоями и объектами
 Function DuplicateActivePage(ByVal NumberOfPages&, Optional ExcludeLayerName$ = "") As Page
-  Dim tRange As ShapeRange
+  Dim Range As ShapeRange
   Dim tShape As Shape, sDuplicate As Shape
   Dim tProps As type_LayerProps
   Dim i&
   For i = 1 To NumberOfPages
-    Set tRange = FindShapesActivePageLayers
+    Set Range = FindShapesActivePageLayers
     Set DuplicateActivePage = ActiveDocument.InsertPages(1, False, ActivePage.Index)
     DuplicateActivePage.SizeHeight = ActivePage.SizeHeight
     DuplicateActivePage.SizeWidth = ActivePage.SizeWidth
-    For Each tShape In tRange.ReverseRange
+    For Each tShape In Range.ReverseRange
       If tShape.Layer.Name <> ExcludeLayerName Then
         layerPropsPreserve tShape.Layer, tProps
         layerPropsReset tShape.Layer
@@ -193,26 +193,26 @@ Function TrimBitmap(BitmapShape As Shape, CropEnvelopeShape As Shape, Optional B
 
   Const EXPANDBY& = 2 'px
   
-  Dim tCrop As Shape
-  Dim tPxW#, tPxH#
-  Dim tSaveUnit As cdrUnit
+  Dim Crop As Shape
+  Dim PxW#, PxH#
+  Dim SaveUnit As cdrUnit
 
   If BitmapShape.Type <> cdrBitmapShape Then Exit Function
   
   'save
-  tSaveUnit = ActiveDocument.Unit
+  SaveUnit = ActiveDocument.Unit
   
   ActiveDocument.Unit = cdrInch
-  tPxW = 1 / BitmapShape.Bitmap.ResolutionX
-  tPxH = 1 / BitmapShape.Bitmap.ResolutionY
+  PxW = 1 / BitmapShape.Bitmap.ResolutionX
+  PxH = 1 / BitmapShape.Bitmap.ResolutionY
   BitmapShape.Bitmap.ResetCropEnvelope
-  Set tCrop = BitmapShape.Layer.CreateRectangle(CropEnvelopeShape.LeftX - tPxW * EXPANDBY, _
-                                                CropEnvelopeShape.TopY + tPxH * EXPANDBY, _
-                                                CropEnvelopeShape.RightX + tPxW * EXPANDBY, _
-                                                CropEnvelopeShape.BottomY - tPxH * EXPANDBY)
-  Set TrimBitmap = tCrop.Intersect(BitmapShape, False, False)
+  Set Crop = BitmapShape.Layer.CreateRectangle(CropEnvelopeShape.LeftX - PxW * EXPANDBY, _
+                                                CropEnvelopeShape.TopY + PxH * EXPANDBY, _
+                                                CropEnvelopeShape.RightX + PxW * EXPANDBY, _
+                                                CropEnvelopeShape.BottomY - PxH * EXPANDBY)
+  Set TrimBitmap = Crop.Intersect(BitmapShape, False, False)
   If TrimBitmap Is Nothing Then
-    tCrop.Delete
+    Crop.Delete
     GoTo ExitFunction
   End If
   TrimBitmap.Bitmap.Crop
@@ -220,7 +220,7 @@ Function TrimBitmap(BitmapShape As Shape, CropEnvelopeShape As Shape, Optional B
   
 ExitFunction:
   'restore
-  ActiveDocument.Unit = tSaveUnit
+  ActiveDocument.Unit = SaveUnit
   
 End Function
 
@@ -241,14 +241,14 @@ End Function
 
 'инструмент Boundary
 Function CreateBoundary(ShapeOrRange As Object) As Shape
-  Dim tShape As Shape, tRange As ShapeRange
+  Dim tShape As Shape, Range As ShapeRange
   'просто объект не ест, надо конкретный тип
   If TypeOf ShapeOrRange Is Shape Then
     Set tShape = ShapeOrRange
     Set CreateBoundary = tShape.CustomCommand("Boundary", "CreateBoundary")
   ElseIf TypeOf ShapeOrRange Is ShapeRange Then
-    Set tRange = ShapeOrRange
-    Set CreateBoundary = tRange.CustomCommand("Boundary", "CreateBoundary")
+    Set Range = ShapeOrRange
+    Set CreateBoundary = Range.CustomCommand("Boundary", "CreateBoundary")
   End If
 End Function
 
