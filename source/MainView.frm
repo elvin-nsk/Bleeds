@@ -17,97 +17,136 @@ Option Explicit
 
 '===============================================================================
 
-Public IsOK As Boolean
-Public IsRastr As Boolean
 Public BleedsMin As Double
 Public BleedsMax As Double
+
+Private Main As MainLogic
+Private WithEvents App As Application
+Attribute App.VB_VarHelpID = -1
 
 '===============================================================================
 
 Private Sub UserForm_Activate()
-  VisibilityCheck
+    Set Main = MainLogic.Create(Me)
+    Set App = Application
+    ExecutabilityCheck
+    VisibilityCheck
 End Sub
 
 Private Sub tbBleeds_KeyPress(ByVal KeyAscii As MSForms.ReturnInteger)
-  OnlyNum KeyAscii
+    OnlyNum KeyAscii
 End Sub
 Private Sub tbBleeds_AfterUpdate()
-  CheckRange tbBleeds, BleedsMin, BleedsMax
+    CheckRange tbBleeds, BleedsMin, BleedsMax
 End Sub
 
 Private Sub tbTrim_KeyPress(ByVal KeyAscii As MSForms.ReturnInteger)
-  OnlyInt KeyAscii
+    OnlyInt KeyAscii
 End Sub
 Private Sub tbTrim_AfterUpdate()
-  CheckRange tbTrim, 1, 10
+    CheckRange tbTrim, 1, 10
 End Sub
 
 Private Sub btnCancel_Click()
-  FormCancel
+    FormCancel
 End Sub
 
-Private Sub btnOK_Click()
-  FormОК
+Private Sub btnExecute_Click()
+    FormExecute
+End Sub
+
+Private Sub App_SelectionChange()
+    ExecutabilityCheck
+    VisibilityCheck
 End Sub
 
 '===============================================================================
 
+Private Sub ExecutabilityCheck()
+    If ActiveDocument Is Nothing Then
+        btnExecute.Enabled = False
+        btnExecute.Caption = "Нет документа"
+        Exit Sub
+    End If
+    If ActiveSelectionRange.Count > 1 Then
+        btnExecute.Enabled = False
+        btnExecute.Caption = "Несколько объектов"
+        Exit Sub
+    End If
+    If ActiveSelectionRange.Count < 1 Then
+        btnExecute.Enabled = False
+        btnExecute.Caption = "Не выбран объект"
+        Exit Sub
+    End If
+    btnExecute.Enabled = True
+    btnExecute.Caption = "Выполнить"
+    btnExecute.SetFocus
+End Sub
+
 Private Sub VisibilityCheck()
-  If IsRastr Then RastrShow Else RastrHide
+    If ActiveDocument Is Nothing Then
+        RastrHide
+        Exit Sub
+    End If
+    If IsShapeType(ActiveSelectionRange.FirstShape, cdrBitmapShape) Then
+        RastrShow
+    Else
+        RastrHide
+    End If
 End Sub
 
 Private Sub RastrShow()
-  cbTrim.Enabled = True
-  tbTrim.Enabled = True
-  lblPix.Enabled = True
-  cbFlatten.Enabled = True
+    cbTrim.Enabled = True
+    tbTrim.Enabled = True
+    lblPix.Enabled = True
+    cbFlatten.Enabled = True
 End Sub
 
 Private Sub RastrHide()
-  cbTrim.Enabled = False
-  tbTrim.Enabled = False
-  lblPix.Enabled = False
-  cbFlatten.Enabled = False
+    cbTrim.Enabled = False
+    tbTrim.Enabled = False
+    lblPix.Enabled = False
+    cbFlatten.Enabled = False
 End Sub
 
-Private Sub FormОК()
-  Me.Hide
-  IsOK = True
+Private Sub FormExecute()
+    Main.Execute Me
 End Sub
 
 Private Sub FormCancel()
-  Me.Hide
+    Main.Dispose Me
+    Me.Hide
 End Sub
 
 '===============================================================================
 
 Private Sub OnlyInt(ByVal KeyAscii As MSForms.ReturnInteger)
-  Select Case KeyAscii
-    Case Asc("0") To Asc("9")
-    Case Else
-      KeyAscii = 0
-  End Select
+    Select Case KeyAscii
+        Case Asc("0") To Asc("9")
+        Case Else
+            KeyAscii = 0
+    End Select
 End Sub
 
 Private Sub OnlyNum(ByVal KeyAscii As MSForms.ReturnInteger)
-  Select Case KeyAscii
-    Case Asc("0") To Asc("9")
-    Case Asc(",")
-    Case Else
-      KeyAscii = 0
-  End Select
+    Select Case KeyAscii
+        Case Asc("0") To Asc("9")
+        Case Asc(",")
+        Case Else
+            KeyAscii = 0
+    End Select
 End Sub
 
 Private Sub CheckRange(TextBox As MSForms.TextBox, ByVal Min As Double, Optional ByVal Max As Double = 2147483647)
-  With TextBox
-    If CDbl(.Value) > Max Then .Value = CStr(Max)
-    If CDbl(.Value) < Min Then .Value = CStr(Min)
-  End With
+    With TextBox
+        If CDbl(.Value) > Max Then .Value = CStr(Max)
+        If CDbl(.Value) < Min Then .Value = CStr(Min)
+    End With
 End Sub
 
 Private Sub UserForm_QueryClose(Cancel As Integer, CloseMode As Integer)
-  If CloseMode = VbQueryClose.vbFormControlMenu Then
-    Cancel = True
-    FormCancel
-  End If
+    If CloseMode = VbQueryClose.vbFormControlMenu Then
+        Cancel = True
+        FormCancel
+    End If
 End Sub
