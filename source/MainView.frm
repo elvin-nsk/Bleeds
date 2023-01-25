@@ -80,7 +80,6 @@ Private Sub ExecutabilityCheck()
     End If
     btnExecute.Enabled = True
     btnExecute.Caption = "Выполнить"
-    btnExecute.SetFocus
 End Sub
 
 Private Sub VisibilityCheck()
